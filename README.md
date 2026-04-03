@@ -72,48 +72,11 @@ Typical flow:
 1. Boot FVP with [`bootfvp.sh`](./scripts/bootfvp.sh).
 2. Connect to FVP Linux over `telnet localhost 5000`.
 3. Upload Zephyr and AGL artifacts to the FVP guest.
-4. Start the Zephyr Realm VM with [`run-vecu-zephyr.sh`](./scripts/run-vecu-zephyr.sh).
+4. Connect to AGL over `telnet localhost 5001`.
 5. Start the AGL guest with [`run-vecu-agl.sh`](./scripts/run-vecu-agl.sh).
 
-## Client
+"Now Trying - Not running yet"
+6. Connect to Zephyr Realm over `telnet localhost 5002`.
+7. Start the Zephyr Realm VM with [`run-vecu-zephyr.sh`](./scripts/run-vecu-zephyr.sh).
 
-For monitor testing, build and upload the local client and kernel module:
 
-```bash
-cd src/sc_client
-make
-scp ./sc_user_client root@192.168.122.33:~/
-
-cd driver
-make
-scp ./sc_manager.ko root@192.168.122.33:~/
-```
-
-Inside FVP Linux:
-
-```bash
-insmod sc_manager.ko
-sc_user_client -h
-```
-
-More usage examples are documented in [`docs/client.md`](./docs/client.md).
-
-## Measurements
-
-For the attestation and V-ECU communication microbenchmarks, run:
-
-```bash
-./scripts/measure_all.sh
-```
-
-This covers:
-
-- CCA attestation token generation
-- token verification
-- baseline TCP, TLS, and TLS-plus-attestation communication phases
-
-## Notes
-
-- `env.sh all` prepares external sources and tools. It does not create every build artifact by itself.
-- `build.sh all` performs the project builds, but some targets such as AGL can take a long time on the first run.
-- Several large assets and generated outputs are intentionally kept out of version control.
