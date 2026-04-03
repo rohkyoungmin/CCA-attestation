@@ -54,9 +54,19 @@ optee-examples_build() {
       $SCRIPT_BUILD_DIR/build-optee-examples.sh
 }
 
+ta_build() {
+    log "===> build the trusted application... "
+    $SCRIPT_BUILD_DIR/build-ta.sh
+}
+
 zephyr_build() {
     log "===> build Zephyr RTOS (Realm V-ECU)... "
     $SCRIPT_BUILD_DIR/build-zephyr.sh
+}
+
+vecu-zephyr_build() {
+    log "===> build Zephyr Realm V-ECU app... "
+    $SCRIPT_BUILD_DIR/build-vecu-zephyr.sh
 }
 
 agl_build() {
@@ -83,12 +93,30 @@ buildall() {
 
    log "===> build the opencsd ... "
    $SCRIPT_BUILD_DIR/build-opencsd.sh
+
+   log "===> build the optee-client... "
+   $SCRIPT_BUILD_DIR/build-optee-client.sh
+
+   log "===> build the optee-examples... "
+   $SCRIPT_BUILD_DIR/build-optee-examples.sh
+
+   log "===> build the trusted application... "
+   $SCRIPT_BUILD_DIR/build-ta.sh
+
+   log "===> build Zephyr RTOS (Realm V-ECU)... "
+   $SCRIPT_BUILD_DIR/build-zephyr.sh
+
+   log "===> build Zephyr Realm V-ECU app... "
+   $SCRIPT_BUILD_DIR/build-vecu-zephyr.sh
+
+   log "===> build AGL (Automotive Grade Linux, Normal V-ECU)... "
+   $SCRIPT_BUILD_DIR/build-agl.sh
 }
 
 
 
 if [ $# != 1 ]; then
-    log_error "Usage: ./build.sh [all | tf-a | linux | hafnium | ...]"
+    log_error "Usage: ./build.sh [all | hafnium | optee-os | rmm | linux | tf-a | opencsd | optee-client | optee-examples | ta | zephyr | vecu-zephyr | agl]"
     exit
 fi
 
@@ -98,6 +126,6 @@ else
     if [ "$(type -t $1_build)" == function ]; then 
         $1_build
     else 
-        log_error "Usage: ./build.sh [all | tf-a | linux | hafnium | ...]"
+        log_error "Usage: ./build.sh [all | hafnium | optee-os | rmm | linux | tf-a | opencsd | optee-client | optee-examples | ta | zephyr | vecu-zephyr | agl]"
     fi
 fi

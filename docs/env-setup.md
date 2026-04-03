@@ -13,7 +13,7 @@
 ## 1. FVP 부팅 (호스트)
 
 ```bash
-cd /home/csos/NDSS/SCRUTINIZER
+cd <repo-root>
 ./scripts/bootfvp.sh
 ```
 
@@ -31,8 +31,8 @@ telnet localhost 5000
 ## 3. Zephyr 빌드 (호스트)
 
 ```bash
-cd /home/csos/NDSS/SCRUTINIZER/dev_workspace/zephyr
-west build -b lkvm_realm /home/csos/NDSS/SCRUTINIZER/src/vecu_zephyr --pristine
+cd <repo-root>/dev_workspace/zephyr
+west build -b lkvm_realm <repo-root>/src/vecu_zephyr --pristine
 ```
 
 ---

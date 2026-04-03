@@ -1,64 +1,119 @@
+# ARM CCA V-ECU Platform
 
-# SCRUTINIZER
+The codebase is centered on Arm FVP and a four-world stack:
 
-The code is tested on Ubuntu 22.04 x86 and aarch64 with minimum 16GB memory.
+- Normal World: Linux host, plus KVM guests such as AGL
+- Realm World: TF-RMM with Zephyr Realm VM
+- Secure World: Hafnium and OP-TEE
+- Root World: TF-A
 
-The system is based on FVP, and the software running in four worlds is as follows:
+The project has been tested on Ubuntu 22.04 on both `x86_64` and `aarch64`, with at least 16 GB RAM recommended.
 
-Linux (Normal-EL1), tf-rmm (Realm-EL2), Hafnium (S-EL2), OPTEE(S-EL1), and tf-a (Root-EL3).
+## Repository Layout
 
-## 1. Setup
+- [`scripts/`](./scripts): environment setup, build, run, and benchmark entrypoints
+- [`docs/`](./docs): environment notes, client usage, VM and measurement guides
+- [`src/sc_client/`](./src/sc_client): local SCRUTINIZER client and kernel driver
+- [`src/vecu_zephyr/`](./src/vecu_zephyr): Zephyr Realm V-ECU application
+- [`src/vecu_attest/`](./src/vecu_attest): attestation token generation and verification microbenchmarks
+- [`src/vecu_comm/`](./src/vecu_comm): inter-V-ECU communication benchmark
 
-Run `scripts/env.sh all` to sync the software stacks.
+## Quick Start
 
+### 1. Fetch external dependencies
 
-## 2. Build
+This downloads and initializes the external workspaces under `dev_workspace`, including toolchains, FVP, Hafnium, TF-RMM, OpenCSD, Zephyr, AGL, `kvmtool-cca`, and `libfdt-src`.
 
-Run `scripts/build.sh all` to build the components.
+```bash
+./scripts/env.sh all
+```
 
-or Run `scripts/build.sh <target>` to build a specific component.
+You can still fetch individual components if needed:
 
-## 3. Run 
+```bash
+./scripts/env.sh zephyr
+./scripts/env.sh agl
+./scripts/env.sh kvmtool
+```
 
-### Lanuch FVP
+### 2. Build all components
 
-Run `./scripts/bootfvp.sh` to lanuch the FVP. The FVP linux's user and password are `root`.
+This runs the project build entrypoint and includes the main firmware, monitor-side components, OP-TEE userspace pieces, Zephyr V-ECU targets, and AGL image build.
 
-### Client
+```bash
+./scripts/build.sh all
+```
 
-For ease of testing, there is a local client that can invoke the functionalities of SCRUTINIZER Monitor.
+You can also build a specific target:
 
-#### In your host, compile and upload to FVP
-```shell
-cd src/sc_client/
+```bash
+./scripts/build.sh tf-a
+./scripts/build.sh vecu-zephyr
+./scripts/build.sh agl
+```
+
+### 3. Launch FVP
+
+```bash
+./scripts/bootfvp.sh
+```
+
+The FVP Linux login is:
+
+- user: `root`
+- password: `root`
+
+## Running the Platform
+
+For the detailed host/FVP/VM workflow, see [`docs/env-setup.md`](./docs/env-setup.md).
+
+Typical flow:
+
+1. Boot FVP with [`bootfvp.sh`](./scripts/bootfvp.sh).
+2. Connect to FVP Linux over `telnet localhost 5000`.
+3. Upload Zephyr and AGL artifacts to the FVP guest.
+4. Start the Zephyr Realm VM with [`run-vecu-zephyr.sh`](./scripts/run-vecu-zephyr.sh).
+5. Start the AGL guest with [`run-vecu-agl.sh`](./scripts/run-vecu-agl.sh).
+
+## Client
+
+For monitor testing, build and upload the local client and kernel module:
+
+```bash
+cd src/sc_client
 make
 scp ./sc_user_client root@192.168.122.33:~/
 
-cd src/sc_client/driver
+cd driver
 make
 scp ./sc_manager.ko root@192.168.122.33:~/
 ```
 
-#### Usage
-In FVP linux terminal, load the kernel module: 
+Inside FVP Linux:
 
-```
- insmod sc_manager.ko
-```
-
-Run the client to test. More details in [client.md](/docs/client.md).
-
-```
+```bash
+insmod sc_manager.ko
 sc_user_client -h
 ```
 
-## Publication
+More usage examples are documented in [`docs/client.md`](./docs/client.md).
 
+## Measurements
+
+For the attestation and V-ECU communication microbenchmarks, run:
+
+```bash
+./scripts/measure_all.sh
 ```
-@inproceedings{zhang2025scrutinizer,
-  title={SCRUTINIZER: Towards Secure Forensics on Compromised TrustZone},
-  author={Zhang, Yiming and Zhang, Fengwei and Luo, Xiapu and Hou, Rui and Ding, Xuhua and Liang, Zhenkai and Yan, Shoumeng and Wei, Tao and He, Zhengyu},
-  booktitle={32nd Network and Distributed System Security Symposium (NDSS’25)},
-  year={2025}
-}
-```
+
+This covers:
+
+- CCA attestation token generation
+- token verification
+- baseline TCP, TLS, and TLS-plus-attestation communication phases
+
+## Notes
+
+- `env.sh all` prepares external sources and tools. It does not create every build artifact by itself.
+- `build.sh all` performs the project builds, but some targets such as AGL can take a long time on the first run.
+- Several large assets and generated outputs are intentionally kept out of version control.

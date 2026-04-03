@@ -207,6 +207,15 @@ zephyr_fetch() {
             popd; popd; exit 1
         fi
         popd
+    else
+        pushd $ZEPHYR_DIR
+        log "===> Syncing existing Zephyr workspace..."
+        west update
+        if [ $? -ne 0 ]; then
+            log_error "[zephyr] Error: west update failed."
+            popd; popd; exit 1
+        fi
+        popd
     fi
 
     popd
@@ -224,7 +233,7 @@ agl_fetch() {
         export PATH="${HOME}/.bin:${PATH}"
     fi
 
-    if [ ! -d $AGL_DIR ]; then
+    if [ ! -d $AGL_DIR/.repo ]; then
         log "===> Initializing AGL workspace (branch: ${AGL_BRANCH})..."
         mkdir -p $AGL_DIR
         pushd $AGL_DIR
@@ -242,13 +251,46 @@ agl_fetch() {
   <remove-project name="meta-tensorflow"/>
 </manifest>
 EOF
-        log "===> Running repo sync (this may take 30-60 minutes)..."
-        repo sync -j$(nproc)
-        if [ $? -ne 0 ]; then
-            log_error "[agl] Error: repo sync failed."
-            popd; popd; exit 1
-        fi
         popd
+    fi
+
+    pushd $AGL_DIR
+    log "===> Running repo sync (this may take 30-60 minutes)..."
+    repo sync -j$(nproc)
+    if [ $? -ne 0 ]; then
+        log_error "[agl] Error: repo sync failed."
+        popd; popd; exit 1
+    fi
+    popd
+
+    popd
+}
+
+kvmtool_fetch() {
+    pushd $THIRD_PARTY_DIR
+
+    if [ ! -d $THIRD_PARTY_DIR/kvmtool-cca ]; then
+        log "===> Cloning kvmtool-cca ..."
+        git clone https://git.gitlab.arm.com/linux-arm/kvmtool-cca.git
+        if [ $? -ne 0 ]; then
+            log_error "[kvmtool] Error cloning kvmtool-cca."
+            popd; exit 1
+        fi
+    fi
+
+    popd
+}
+
+libfdt_fetch() {
+    pushd $THIRD_PARTY_DIR
+
+    if [ ! -d $THIRD_PARTY_DIR/libfdt-src ]; then
+        log "===> Cloning libfdt source ..."
+        git clone https://git.kernel.org/pub/scm/utils/dtc/dtc.git libfdt-src
+        if [ $? -ne 0 ]; then
+            log_error "[libfdt] Error cloning libfdt source."
+            popd; exit 1
+        fi
     fi
 
     popd
@@ -264,10 +306,10 @@ third_parties_fetchall() {
     rmm_fetch
     linux_fetch
     opencsd_fetch
-    # Note: zephyr_fetch and agl_fetch are intentionally excluded from 'all'
-    # because they are large and time-consuming. Run them separately:
-    #   scripts/env.sh zephyr
-    #   scripts/env.sh agl
+    kvmtool_fetch
+    libfdt_fetch
+    zephyr_fetch
+    agl_fetch
 }
 
 if [ ! -d $THIRD_PARTY_DIR ]; then
@@ -281,7 +323,7 @@ if [ ! -d $LOG_DIR ]; then
 fi
 
 if [ $# != 1 ]; then
-    log_error "Usage: ./env_fetch.sh [all | cross_compile | prerequisite | fvp_model"
+    log_error "Usage: ./env.sh [all | prerequisite | cross_compile | fvp_model | rootfs | hf | rmm | linux | opencsd | kvmtool | libfdt | zephyr | agl]"
     exit
 fi
 
@@ -291,6 +333,6 @@ else
     if [ "$(type -t $1_fetch)" == function ]; then 
         $1_fetch
     else 
-        log_error "Usage: ./env_fetch.sh [all | cross_compile | prerequisite | fvp_model"
+        log_error "Usage: ./env.sh [all | prerequisite | cross_compile | fvp_model | rootfs | hf | rmm | linux | opencsd | kvmtool | libfdt | zephyr | agl]"
     fi
 fi
