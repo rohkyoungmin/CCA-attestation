@@ -67,17 +67,46 @@ The FVP Linux login is:
 
 For the detailed host/FVP/VM workflow, see [`docs/env-setup.md`](./docs/env-setup.md).
 
-Typical flow:
+Build artifacts used at runtime:
+
+- Zephyr Realm image: `dev_workspace/zephyr/build/zephyr/zephyr.bin`
+- AGL kernel: `dev_workspace/agl-workspace/build-agl-arm64/tmp/deploy/images/qemuarm64/Image`
+- AGL rootfs: `dev_workspace/agl-workspace/build-agl-arm64/tmp/deploy/images/qemuarm64/agl-image-minimal-qemuarm64.rootfs.ext4`
+
+Typical end-to-end flow:
 
 1. Boot FVP with [`bootfvp.sh`](./scripts/bootfvp.sh).
 2. Connect to FVP Linux over `telnet localhost 5000`.
-3. Upload Zephyr and AGL artifacts to the FVP guest.
-4. Connect to AGL over `telnet localhost 5001`.
-5. Start the AGL guest with [`run-vecu-agl.sh`](./scripts/run-vecu-agl.sh).
+3. Upload the runtime artifacts from the host to the FVP guest:
 
-"Now Trying - Not running yet" :
+```bash
+scp dev_workspace/zephyr/build/zephyr/zephyr.bin \
+    root@192.168.122.33:/root/realm-zephyr.bin
 
-6. Connect to Zephyr Realm over `telnet localhost 5002`.
-7. Start the Zephyr Realm VM with [`run-vecu-zephyr.sh`](./scripts/run-vecu-zephyr.sh).
+scp dev_workspace/agl-workspace/build-agl-arm64/tmp/deploy/images/qemuarm64/Image \
+    root@192.168.122.33:/root/guest-Image
 
+scp dev_workspace/agl-workspace/build-agl-arm64/tmp/deploy/images/qemuarm64/agl-image-minimal-qemuarm64.rootfs.ext4 \
+    root@192.168.122.33:/root/agl.ext4
+```
+
+4. Inside the FVP Linux shell, start the guests:
+
+```bash
+/root/run-vecu-agl.sh
+/root/run-vecu-zephyr.sh
+```
+
+5. Connect to the guest consoles from the host:
+
+```bash
+telnet localhost 5001  # AGL
+telnet localhost 5002  # Zephyr Realm
+```
+
+Port mapping:
+
+- `5000`: FVP Normal World Linux
+- `5001`: AGL guest console
+- `5002`: Zephyr Realm console
 
