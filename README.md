@@ -75,7 +75,8 @@ Typical flow:
 4. Connect to AGL over `telnet localhost 5001`.
 5. Start the AGL guest with [`run-vecu-agl.sh`](./scripts/run-vecu-agl.sh).
 
-"Now Trying - Not running yet"
+"Now Trying - Not running yet" :
+
 6. Connect to Zephyr Realm over `telnet localhost 5002`.
 7. Start the Zephyr Realm VM with [`run-vecu-zephyr.sh`](./scripts/run-vecu-zephyr.sh).
 
