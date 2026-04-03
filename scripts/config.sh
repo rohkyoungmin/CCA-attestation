@@ -41,7 +41,7 @@ export CROSS_COMPILE_CLANG_DIR_AARCH64="clang+llvm-15.0.6-aarch64-linux-gnu"
 export CROSS_COMPILE_DIR_LINUX="gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu"
 export CROSS_COMPILE_DIR_LINUX_TA="arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu"
 
-export FVP_DIR="FVP_Base_RevC_AEMvA_11.31_28"
+export FVP_DIR="FVP_Base_RevC_AEMvA_11.26_11"
 # export OELAMP_IMG="lt-vexpress64-openembedded_lamp-armv8.img"
 export ROOTFS="host-fs.ext4"
 export HF="hafnium"

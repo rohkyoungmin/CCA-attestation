@@ -99,10 +99,10 @@ fvp_model_fetch() {
         if [[ "$(uname -m)" == "aarch64" ]]; then
             FVP_SRC=$FVP_SRC_AARCH64
             log "===> Downloading Armv-A Based AEM FVP (aarch64-host)..."
-            wget -O- $FVP_SRC | tar xvzf -
+            wget -O- "$FVP_SRC" | tar xvzf -
         else
             log "===> Downloading Armv-A Based AEM FVP (x86-host)..."
-            curl $FVP_SRC | tar xzvf -
+            curl -LfsS "$FVP_SRC" | tar xzvf -
         fi
         
         if [ $? -ne 0 ]; then
@@ -233,28 +233,44 @@ agl_fetch() {
         export PATH="${HOME}/.bin:${PATH}"
     fi
 
+    local git_user_name
+    local git_user_email
+    git_user_name="$(git config --global --get user.name)"
+    git_user_email="$(git config --global --get user.email)"
+
+    if [ -z "$git_user_name" ] || [ -z "$git_user_email" ]; then
+        log_error "[agl] Error: git global user.name/user.email is not configured."
+        log_error "[agl] Run:"
+        log_error "  git config --global user.name \"Your Name\""
+        log_error "  git config --global user.email \"you@example.com\""
+        popd
+        exit 1
+    fi
+
     if [ ! -d $AGL_DIR/.repo ]; then
         log "===> Initializing AGL workspace (branch: ${AGL_BRANCH})..."
         mkdir -p $AGL_DIR
         pushd $AGL_DIR
         repo init -u https://gerrit.automotivelinux.org/gerrit/AGL/AGL-repo \
-                  -b $AGL_BRANCH
+                  -b $AGL_BRANCH \
+                  --config-name
         if [ $? -ne 0 ]; then
             log_error "[agl] Error: repo init failed."
             popd; popd; exit 1
         fi
-        # Skip meta-tensorflow: broken SHA1 in salmon manifest
-        mkdir -p .repo/local_manifests
-        cat > .repo/local_manifests/skip-tensorflow.xml << 'EOF'
+        popd
+    fi
+
+    pushd $AGL_DIR
+    # Always install the local manifest before sync so partially initialized
+    # workspaces also skip the broken meta-tensorflow revision.
+    mkdir -p .repo/local_manifests
+    cat > .repo/local_manifests/skip-tensorflow.xml << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
   <remove-project name="meta-tensorflow"/>
 </manifest>
 EOF
-        popd
-    fi
-
-    pushd $AGL_DIR
     log "===> Running repo sync (this may take 30-60 minutes)..."
     repo sync -j$(nproc)
     if [ $? -ne 0 ]; then
