@@ -1,0 +1,98 @@
+ELF Header:
+  Magic:   7f 45 4c 46 02 01 01 00 00 00 00 00 00 00 00 00 
+  Class:                             ELF64
+  Data:                              2's complement, little endian
+  Version:                           1 (current)
+  OS/ABI:                            UNIX - System V
+  ABI Version:                       0
+  Type:                              EXEC (Executable file)
+  Machine:                           AArch64
+  Version:                           0x1
+  Entry point address:               0x8000110c
+  Start of program headers:          64 (bytes into file)
+  Start of section headers:          571312 (bytes into file)
+  Flags:                             0x0
+  Size of this header:               64 (bytes)
+  Size of program headers:           56 (bytes)
+  Number of program headers:         4
+  Size of section headers:           64 (bytes)
+  Number of section headers:         25
+  Section header string table index: 24
+
+Section Headers:
+  [Nr] Name              Type             Address           Offset
+       Size              EntSize          Flags  Link  Info  Align
+  [ 0]                   NULL             0000000000000000  00000000
+       0000000000000000  0000000000000000           0     0     0
+  [ 1] text              PROGBITS         0000000080000000  00001000
+       0000000000006000  0000000000000000  AX       0     0     2048
+  [ 2] initlevel         PROGBITS         0000000080006000  00007000
+       0000000000000040  0000000000000000   A       0     0     8
+  [ 3] device_area       PROGBITS         0000000080006040  00007040
+       0000000000000050  0000000000000000   A       0     0     8
+  [ 4] sw_isr_table      PROGBITS         0000000080006090  00007090
+       0000000000000dc0  0000000000000000  WA       0     0     8
+  [ 5] tbss              NOBITS           0000000080006e50  00007e50
+       0000000000000008  0000000000000000 WAT       0     0     8
+  [ 6] rodata            PROGBITS         0000000080006e50  00007e50
+       0000000000000a91  0000000000000000   A       0     0     8
+  [ 7] bss               NOBITS           0000000080008000  000088e1
+       000000000002d7a2  0000000000000000  WA       0     0     4096
+  [ 8] noinit            NOBITS           0000000080036000  000088e1
+       0000000000008000  0000000000000000  WA       0     0     4096
+  [ 9] datas             PROGBITS         000000008003e000  000088e8
+       0000000000000050  0000000000000000  WA       0     0     8
+  [10] device_states     PROGBITS         000000008003e050  00008938
+       0000000000000004  0000000000000000  WA       0     0     1
+  [11] .last_ram_section NOBITS           000000008003e054  0000893c
+       0000000000000fac  0000000000000000  WA       0     0     1
+  [12] .comment          PROGBITS         0000000000000000  00008940
+       0000000000000020  0000000000000001  MS       0     0     1
+  [13] .debug_aranges    PROGBITS         0000000000000000  00008960
+       0000000000001640  0000000000000000           0     0     16
+  [14] .debug_info       PROGBITS         0000000000000000  00009fa0
+       0000000000034c31  0000000000000000           0     0     1
+  [15] .debug_abbrev     PROGBITS         0000000000000000  0003ebd1
+       00000000000067ff  0000000000000000           0     0     1
+  [16] .debug_line       PROGBITS         0000000000000000  000453d0
+       00000000000123a2  0000000000000000           0     0     1
+  [17] .debug_frame      PROGBITS         0000000000000000  00057778
+       0000000000002850  0000000000000000           0     0     8
+  [18] .debug_str        PROGBITS         0000000000000000  00059fc8
+       000000000000550e  0000000000000001  MS       0     0     1
+  [19] .debug_loc        PROGBITS         0000000000000000  0005f4d6
+       000000000001d2e8  0000000000000000           0     0     1
+  [20] .debug_ranges     PROGBITS         0000000000000000  0007c7c0
+       0000000000006020  0000000000000000           0     0     16
+  [21] .last_section     PROGBITS         000000008003f000  0000893c
+       0000000000000004  0000000000000000   A       0     0     1
+  [22] .symtab           SYMTAB           0000000000000000  000827e0
+       00000000000055f8  0000000000000018          23   370     8
+  [23] .strtab           STRTAB           0000000000000000  00087dd8
+       00000000000038d9  0000000000000000           0     0     1
+  [24] .shstrtab         STRTAB           0000000000000000  0008b6b1
+       00000000000000f9  0000000000000000           0     0     1
+Key to Flags:
+  W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+  L (link order), O (extra OS processing required), G (group), T (TLS),
+  C (compressed), x (unknown), o (OS specific), E (exclude),
+  D (mbind), p (processor specific)
+
+Program Headers:
+  Type           Offset             VirtAddr           PhysAddr
+                 FileSiz            MemSiz              Flags  Align
+  LOAD           0x0000000000001000 0x0000000080000000 0x0000000080000000
+                 0x00000000000078e1 0x000000000003e000  RWE    0x1000
+  LOAD           0x00000000000088e8 0x000000008003e000 0x000000008003e000
+                 0x0000000000000054 0x0000000000001000  RW     0x8
+  LOAD           0x000000000000893c 0x000000008003f000 0x000000008003f000
+                 0x0000000000000004 0x0000000000000004  R      0x1
+  TLS            0x0000000000007e50 0x0000000080006e50 0x0000000080006e50
+                 0x0000000000000000 0x0000000000000008  R      0x8
+
+ Section to Segment mapping:
+  Segment Sections...
+   00     text initlevel device_area sw_isr_table rodata bss noinit 
+   01     datas device_states .last_ram_section 
+   02     .last_section 
+   03     tbss 

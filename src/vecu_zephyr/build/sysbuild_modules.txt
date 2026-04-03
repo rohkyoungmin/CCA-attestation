@@ -1,0 +1,1 @@
+"mcuboot":"/home/csos/NDSS/SCRUTINIZER/dev_workspace/zephyr/bootloader/mcuboot":"/home/csos/NDSS/SCRUTINIZER/dev_workspace/zephyr/bootloader/mcuboot/boot/zephyr/sysbuild"
