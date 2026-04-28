@@ -348,7 +348,7 @@ out:
 
 //0 enable 1 disable
 // int set_breakpoint_flag =0;
-//scrutinizer
+// Local monitor test hook.
 
 struct mobj *mobj_ffa_get_by_cookie(uint64_t cookie,
 				    unsigned int internal_offs)
@@ -359,7 +359,7 @@ struct mobj *mobj_ffa_get_by_cookie(uint64_t cookie,
 	// if(set_breakpoint_flag > 7)
 	// {
 	// 	#define SC_BREAKPOINT    0x80000FF2
-	// 	DMSG("test scrutinizer:set breakpoint simulating PMI 0x%lx.", (unsigned long)0x6296fA0);
+	// 	DMSG("test monitor:set breakpoint simulating PMI 0x%lx.", (unsigned long)0x6296fA0);
 	// 	uint64_t fid = SC_BREAKPOINT;
 	// 	__asm __volatile("mov x0, %0" :: "r" (fid));
 	// 	__asm __volatile("mov x1, %0" :: "r" (0x6296fA0));

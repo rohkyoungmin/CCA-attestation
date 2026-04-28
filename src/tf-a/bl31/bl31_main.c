@@ -143,7 +143,7 @@ void bl31_main(void)
 	runtime_svc_init();
 
 
-	/* Initialize Scrutinizer. */
+	/* Initialize the local monitor hooks. */
 	SCRUTINIZER_INIT();
 
 	/*

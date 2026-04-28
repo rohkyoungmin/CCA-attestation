@@ -1,0 +1,1249 @@
+diff --git a/arm/aarch64/include/asm/kvm.h b/arm/aarch64/include/asm/kvm.h
+index 245e194..681afab 100644
+--- a/arm/aarch64/include/asm/kvm.h
++++ b/arm/aarch64/include/asm/kvm.h
+@@ -110,7 +110,7 @@ struct kvm_regs {
+ #define KVM_ARM_VCPU_PTRAUTH_ADDRESS	5 /* VCPU uses address authentication */
+ #define KVM_ARM_VCPU_PTRAUTH_GENERIC	6 /* VCPU uses generic authentication */
+ #define KVM_ARM_VCPU_HAS_EL2		7 /* Support nested virtualization */
+-#define KVM_ARM_VCPU_REC		8 /* VCPU REC state as part of Realm */
++#define KVM_ARM_VCPU_REC		7 /* VCPU REC state as part of Realm */
+ 
+ struct kvm_vcpu_init {
+ 	__u32 target;
+diff --git a/arm/aarch64/kvm-cpu.c b/arm/aarch64/kvm-cpu.c
+index 847785f..a7fa935 100644
+--- a/arm/aarch64/kvm-cpu.c
++++ b/arm/aarch64/kvm-cpu.c
+@@ -4,6 +4,7 @@
+ #include "asm/realm.h"
+ 
+ #include <asm/ptrace.h>
++#include <stdlib.h>
+ 
+ #define COMPAT_PSR_F_BIT	0x00000040
+ #define COMPAT_PSR_I_BIT	0x00000080
+@@ -29,6 +30,59 @@ static __u64 __core_reg_id(__u64 offset)
+ 
+ #define ARM64_CORE_REG(x) __core_reg_id(KVM_REG_ARM_CORE_REG(x))
+ 
++static u64 read_core_reg(struct kvm_cpu *vcpu, u64 reg_id, const char *name)
++{
++	struct kvm_one_reg reg;
++	u64 data = 0;
++
++	reg.id = reg_id;
++	reg.addr = (u64)&data;
++
++	if (ioctl(vcpu->vcpu_fd, KVM_GET_ONE_REG, &reg) < 0) {
++		pr_warning("KVM_GET_ONE_REG failed (%s vcpu%ld): %s",
++			   name, vcpu->cpu_id, strerror(errno));
++		return ~0ULL;
++	}
++
++	return data;
++}
++
++static void log_realm_entry_state(struct kvm_cpu *vcpu)
++{
++	u64 pc = read_core_reg(vcpu, ARM64_CORE_REG(regs.pc), "pc");
++	u64 x0 = read_core_reg(vcpu, ARM64_CORE_REG(regs.regs[0]), "x0");
++	u64 pstate = read_core_reg(vcpu, ARM64_CORE_REG(regs.pstate), "pstate");
++
++	pr_debug("vcpu%ld entry pc=0x%llx x0=0x%llx pstate=0x%llx",
++		 vcpu->cpu_id, pc, x0, pstate);
++}
++
++static u64 realm_entry_offset(void)
++{
++	static bool parsed;
++	static u64 offset;
++	const char *env;
++	char *endptr;
++
++	if (parsed)
++		return offset;
++
++	parsed = true;
++	env = getenv("LKVM_REALM_ENTRY_OFFSET");
++	if (!env || !*env)
++		return 0;
++
++	offset = strtoull(env, &endptr, 0);
++	if (endptr == env || *endptr != '\0') {
++		pr_warning("Ignoring invalid LKVM_REALM_ENTRY_OFFSET='%s'", env);
++		offset = 0;
++		return 0;
++	}
++
++	pr_info("Using Realm entry offset 0x%llx", offset);
++	return offset;
++}
++
+ unsigned long kvm_cpu__get_vcpu_mpidr(struct kvm_cpu *vcpu)
+ {
+ 	struct kvm_one_reg reg;
+@@ -125,6 +179,8 @@ static void reset_vcpu_aarch64(struct kvm_cpu *vcpu)
+ 
+ 		/* pc = start of kernel image */
+ 		data	= kvm->arch.kern_guest_start;
++		if (kvm__is_realm(kvm))
++			data += realm_entry_offset();
+ 		reg.id	= ARM64_CORE_REG(regs.pc);
+ 		if (ioctl(vcpu->vcpu_fd, KVM_SET_ONE_REG, &reg) < 0)
+ 			die_perror("KVM_SET_ONE_REG failed (pc)");
+@@ -136,6 +192,9 @@ static void reset_vcpu_aarch64(struct kvm_cpu *vcpu)
+ 		if (ioctl(vcpu->vcpu_fd, KVM_ARM_VCPU_FINALIZE, &feature) < 0)
+ 			die_perror("KVM_ARM_VCPU_FINALIZE(KVM_ARM_VCPU_REC)");
+ 	}
++
++	if (vcpu->cpu_id == 0)
++		log_realm_entry_state(vcpu);
+ }
+ 
+ void kvm_cpu__select_features(struct kvm *kvm, struct kvm_vcpu_init *init)
+diff --git a/arm/aarch64/realm.c b/arm/aarch64/realm.c
+index 6c65c34..665ba39 100644
+--- a/arm/aarch64/realm.c
++++ b/arm/aarch64/realm.c
+@@ -108,7 +108,7 @@ static void realm_configure_debug(struct kvm *kvm)
+ 	dbg_cfg.num_wrps = n;
+ 
+ 	if (ioctl(kvm->vm_fd, KVM_ENABLE_CAP, &rme_config) < 0)
+-		die_perror("KVM_CAP_RME(KVM_CAP_ARM_RME_CONFIG_REALM) DEBUG");
++		pr_warning("KVM_CAP_ARM_RME_CFG_DBG not supported, skipping\n");
+ }
+ 
+ static void realm_configure_parameters(struct kvm *kvm)
+@@ -203,6 +203,15 @@ void kvm_arm_realm_populate_dtb(struct kvm *kvm)
+ 	start = ALIGN_DOWN(kvm->arch.dtb_guest_start, SZ_4K);
+ 	end = ALIGN(kvm->arch.dtb_guest_start + FDT_MAX_SIZE, SZ_4K);
+ 	realm_populate(kvm, start, end - start);
++
++	/*
++	 * Reserve one extra debug/shared page right after the DTB window, but
++	 * do not populate it as private Realm RAM. Zephyr can later transition
++	 * this page to RIPAS_EMPTY and access it through the shared alias bit,
++	 * while Normal World tooling can observe it without touching delegated
++	 * private memory.
++	 */
++	realm_init_ipa_range(kvm, end, SZ_4K);
+ }
+ 
+ static void kvm_arm_realm_activate_realm(struct kvm *kvm)
+diff --git a/builtin-run.c b/builtin-run.c
+index 21373d4..ff00074 100644
+--- a/builtin-run.c
++++ b/builtin-run.c
+@@ -33,6 +33,8 @@
+ #include "kvm/guest_compat.h"
+ #include "kvm/kvm-ipc.h"
+ #include "kvm/builtin-debug.h"
++#include <asm/kvm.h>
++#include <asm/ptrace.h>
+ 
+ #include <linux/types.h>
+ #include <linux/err.h>
+@@ -41,6 +43,11 @@
+ #include <sys/utsname.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
++#include <sys/socket.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <poll.h>
++#include <netinet/in.h>
+ #include <termios.h>
+ #include <signal.h>
+ #include <stdlib.h>
+@@ -48,6 +55,867 @@
+ #include <unistd.h>
+ #include <ctype.h>
+ #include <stdio.h>
++#include <unistd.h>
++
++#if defined(KVM_REG_ARM64) && defined(KVM_REG_ARM_CORE)
++static __u64 arm64_core_reg_id(__u64 offset)
++{
++	__u64 id = KVM_REG_ARM64 | KVM_REG_ARM_CORE | offset;
++
++	if (offset < KVM_REG_ARM_CORE_REG(fp_regs))
++		id |= KVM_REG_SIZE_U64;
++	else if (offset < KVM_REG_ARM_CORE_REG(fp_regs.fpsr))
++		id |= KVM_REG_SIZE_U128;
++	else
++		id |= KVM_REG_SIZE_U32;
++
++	return id;
++}
++
++#define ARM64_CORE_REG(name) arm64_core_reg_id(KVM_REG_ARM_CORE_REG(name))
++
++static bool read_vcpu_u64_reg(struct kvm_cpu *vcpu, __u64 reg_id, u64 *out)
++{
++	struct kvm_one_reg reg = {
++		.id = reg_id,
++		.addr = (u64)out,
++	};
++
++	if (ioctl(vcpu->vcpu_fd, KVM_GET_ONE_REG, &reg) < 0) {
++		pr_warning("KVM_GET_ONE_REG failed (vcpu%lu): %s",
++			   vcpu->cpu_id, strerror(errno));
++		return false;
++	}
++
++	return true;
++}
++
++static void *vcpu_trace_thread(void *arg)
++{
++	struct kvm *kvm = arg;
++	struct kvm_cpu *vcpu;
++	u64 last_pc = ~0ULL;
++	u64 last_pstate = ~0ULL;
++	const char *guest_kind;
++
++	if (!kvm->cpus || !kvm->cpus[0])
++		return NULL;
++
++	vcpu = kvm->cpus[0];
++	guest_kind = kvm->cfg.arch.is_realm ? "realm" : "normal";
++
++	while (vcpu->is_running) {
++		u64 pc = 0;
++		u64 pstate = 0;
++
++		if (!read_vcpu_u64_reg(vcpu, ARM64_CORE_REG(regs.pc), &pc) ||
++		    !read_vcpu_u64_reg(vcpu, ARM64_CORE_REG(regs.pstate), &pstate)) {
++			break;
++		}
++
++		if (pc != last_pc || pstate != last_pstate) {
++			pr_debug("%s guest %s vcpu%lu live pc=0x%llx pstate=0x%llx",
++				 guest_kind, kvm->cfg.guest_name, vcpu->cpu_id, pc,
++				 pstate);
++			last_pc = pc;
++			last_pstate = pstate;
++		}
++
++		usleep(100000);
++	}
++
++	return NULL;
++}
++
++static bool vcpu_trace_supported(void)
++{
++	return true;
++}
++
++static bool vcpu_trace_enabled(void)
++{
++	const char *env = getenv("LKVM_LIVE_PC_TRACE");
++
++	return env && env[0] && strcmp(env, "0");
++}
++#else
++static void *vcpu_trace_thread(void *arg)
++{
++	(void)arg;
++	return NULL;
++}
++
++static bool vcpu_trace_supported(void)
++{
++	return false;
++}
++
++static bool vcpu_trace_enabled(void)
++{
++	return false;
++}
++#endif
++
++#define REALM_STATUS_DEFAULT_GPA   0x83e10000ULL
++#define REALM_STATUS_MAGIC         0x524d5354U
++#define REALM_STATUS_TEXT_LEN      64
++#define REALM_TOKEN_DEFAULT_GPA    0x83ffe000ULL
++#define REALM_TOKEN_CTRL_DEFAULT_GPA 0x83fff000ULL
++#define REALM_TOKEN_MAX_SIZE       4096U
++#define REALM_TOKEN_CHALLENGE_SIZE 64U
++#define REALM_COMM_MAGIC           0xcca0cc00U
++#define REALM_COMM_HOST_MSG_SIZE   128U
++#define REALM_COMM_HOST_REQ_NORMAL 1U
++#define REALM_COMM_HOST_STATUS_OK       0U
++#define REALM_COMM_HOST_STATUS_NO_TOKEN 2U
++#define REALM_COMM_HOST_STATUS_AGL_NO_VERIFIER 3U
++#define REALM_COMM_HOST_STATUS_AGL_VERIFY_FAIL 4U
++#define REALM_COMM_HOST_STATUS_ERROR    0xffffffffU
++#define REALM_TOKEN_WATCH_POLL_US       1000U
++#define REALM_AGL_PROTO_MAGIC           0x314c4741U /* "AGL1", little-endian */
++#define REALM_AGL_PROTO_VERSION         1U
++#define REALM_AGL_DEFAULT_PORT          7777
++#define REALM_AGL_DEFAULT_TIMEOUT_MS    3000
++
++struct realm_status_page {
++	u32 magic;
++	u32 phase;
++	u32 heartbeat;
++	u32 reserved;
++	u64 value0;
++	u64 value1;
++	char text[REALM_STATUS_TEXT_LEN];
++};
++
++struct realm_comm_ctrl {
++	u32 magic;
++	u32 token_ready;
++	u32 token_size;
++	u32 gen_count;
++	u64 gen_time_ns;
++	u8 challenge[REALM_TOKEN_CHALLENGE_SIZE];
++	u32 host_req;
++	u32 host_ack;
++	u32 host_gen;
++	u32 host_status;
++	u64 host_arg0;
++	u64 host_arg1;
++	char host_msg[REALM_COMM_HOST_MSG_SIZE];
++};
++
++struct realm_agl_verify_req {
++	u32 magic;
++	u32 version;
++	u32 gen;
++	u32 token_size;
++	u64 realm_gen_time_ns;
++};
++
++struct realm_agl_verify_resp {
++	u32 magic;
++	u32 version;
++	u32 gen;
++	u32 status;
++	u64 parse_ns;
++	u64 hash_ns;
++	u64 total_ns;
++	u8 sha256[32];
++};
++
++struct realm_agl_verifier {
++	bool enabled;
++	int listen_fd;
++	int client_fd;
++	int port;
++	int timeout_ms;
++};
++
++static const char *realm_status_phase_name(u32 phase)
++{
++	switch (phase) {
++	case 0x10:
++		return "shim_entry";
++	case 0x11:
++		return "shim_rsi_ready";
++	case 0x12:
++		return "shim_payload_jump";
++	case 0x19:
++		return "payload_stub_entry";
++	case 0x1a:
++		return "payload_before_reset_prep";
++	case 0x1b:
++		return "payload_after_reset_prep";
++	case 0x1c:
++		return "payload_after_highest_init";
++	case 0x1d:
++		return "payload_after_el1_init";
++	case 0x1e:
++		return "payload_before_z_prep_c";
++	case 0x1f:
++		return "payload_unexpected_el";
++	case 0x20:
++		return "payload_main";
++	case 0x21:
++		return "payload_heartbeat";
++	case 0x22:
++		return "payload_after_bss_zero";
++	case 0x26:
++		return "payload_before_tlbi_probe";
++	case 0x27:
++		return "payload_after_tlbi_probe";
++	case 0x28:
++		return "payload_after_new_table";
++	case 0x29:
++		return "payload_after_zephyr_ranges";
++	case 0x2a:
++		return "payload_after_device_ranges";
++	case 0x2b:
++		return "payload_after_mmu_sync";
++	case 0x2c:
++		return "payload_map_zephyr_range";
++	case 0x2d:
++		return "payload_map_device_range";
++	case 0x2e:
++		return "payload_map_zephyr_chunk";
++	case 0x2f:
++		return "scratch_map_before";
++	case 0x30:
++		return "scratch_map_after";
++	case 0x31:
++		return "status_map_before";
++	case 0x32:
++		return "status_map_after";
++	case 0x33:
++		return "payload_before_final_mmu_enable";
++	case 0x34:
++		return "payload_final_mair_before";
++	case 0x35:
++		return "payload_final_mair_after";
++	case 0x36:
++		return "payload_final_tcr_after";
++	case 0x37:
++		return "payload_final_ttbr0_after";
++	case 0x38:
++		return "payload_final_sctlr_before";
++	case 0x39:
++		return "payload_final_sctlr_after";
++	case 0x3a:
++		return "payload_final_isb_after";
++	case 0x3b:
++		return "payload_runtime_ctx_ready";
++	case 0x60:
++		return "payload_init_pre_kernel_1";
++	case 0x61:
++		return "payload_init_pre_kernel_2";
++	case 0x62:
++		return "payload_init_post_kernel";
++	case 0x63:
++		return "payload_init_application";
++	case 0x64:
++		return "payload_init_after_intc";
++	case 0x65:
++		return "payload_init_after_serial";
++	case 0x70:
++		return "payload_mini_shell_ready";
++	case 0x71:
++		return "payload_attest_ok";
++	case 0x72:
++		return "payload_attest_fail";
++	case 0x73:
++		return "payload_mini_shell_prompt";
++	case 0x74:
++		return "payload_mini_uart_init_before";
++	case 0x75:
++		return "payload_mini_uart_init_after";
++	case 0x76:
++		return "payload_mini_uart_cfg_before";
++	case 0x77:
++		return "payload_mini_uart_cfg_after";
++	case 0x78:
++		return "payload_mini_banner_before";
++	case 0x79:
++		return "payload_mini_banner_after";
++	case 0x7a:
++		return "payload_mini_char_before";
++	case 0x7b:
++		return "payload_mini_char_after";
++	case 0x7e:
++		return "payload_host_req";
++	case 0x7f:
++		return "payload_host_ack";
++	case 0x7c:
++		return "payload_uart_alias_map_before";
++	case 0x7d:
++		return "payload_uart_alias_map_after";
++	case 0x23:
++		return "payload_after_mmu_init";
++	case 0x24:
++		return "payload_after_interrupt_init";
++	case 0x25:
++		return "payload_before_cstart";
++	case 1:
++		return "main_entered";
++	case 2:
++		return "rsi_ready";
++	case 3:
++		return "attest_ok";
++	case 4:
++		return "attest_failed";
++	case 5:
++		return "init_failed";
++	case 6:
++		return "heartbeat";
++	case 7:
++		return "mmu_ready";
++	case 8:
++		return "pre_cstart";
++	case 9:
++		return "el1_rsi_ready";
++	default:
++		return "unknown";
++	}
++}
++
++static bool realm_status_watch_enabled(struct kvm *kvm)
++{
++	(void)kvm;
++	return getenv("LKVM_REALM_STATUS_WATCH") != NULL;
++}
++
++static u64 realm_status_watch_gpa(void)
++{
++	const char *env = getenv("LKVM_REALM_STATUS_GPA");
++	char *endptr;
++
++	if (env == NULL || *env == '\0') {
++		return REALM_STATUS_DEFAULT_GPA;
++	}
++
++	errno = 0;
++	u64 gpa = strtoull(env, &endptr, 0);
++	if (errno != 0 || endptr == env || *endptr != '\0') {
++		pr_warning("Invalid LKVM_REALM_STATUS_GPA=%s, using default 0x%llx",
++			   env, (unsigned long long)REALM_STATUS_DEFAULT_GPA);
++		return REALM_STATUS_DEFAULT_GPA;
++	}
++
++	return gpa;
++}
++
++static u64 realm_env_u64(const char *name, u64 default_value)
++{
++	const char *env = getenv(name);
++	char *endptr;
++	u64 value;
++
++	if (env == NULL || *env == '\0')
++		return default_value;
++
++	errno = 0;
++	value = strtoull(env, &endptr, 0);
++	if (errno != 0 || endptr == env || *endptr != '\0') {
++		pr_warning("Invalid %s=%s, using default 0x%llx",
++			   name, env, (unsigned long long)default_value);
++		return default_value;
++	}
++
++	return value;
++}
++
++static const char *realm_env_path(const char *name, const char *default_path)
++{
++	const char *env = getenv(name);
++
++	if (env == NULL || *env == '\0')
++		return default_path;
++
++	return env;
++}
++
++static bool realm_env_bool(const char *name)
++{
++	const char *env = getenv(name);
++
++	return env != NULL && *env != '\0' && strcmp(env, "0");
++}
++
++static bool realm_token_watch_enabled(struct kvm *kvm)
++{
++	(void)kvm;
++	return getenv("LKVM_REALM_TOKEN_WATCH") != NULL;
++}
++
++static bool realm_write_binary_file(const char *path, const void *buf, size_t len)
++{
++	FILE *fp = fopen(path, "wb");
++
++	if (fp == NULL) {
++		pr_warning("realm token failed to open %s: %s",
++			   path, strerror(errno));
++		return false;
++	}
++
++	if (fwrite(buf, 1, len, fp) != len) {
++		pr_warning("realm token failed to write %s: %s",
++			   path, strerror(errno));
++		fclose(fp);
++		return false;
++	}
++
++	if (fclose(fp) != 0) {
++		pr_warning("realm token failed to close %s: %s",
++			   path, strerror(errno));
++		return false;
++	}
++
++	return true;
++}
++
++static bool realm_write_token_meta(const char *path,
++				   const struct realm_comm_ctrl *ctrl,
++				   u64 ctrl_gpa, u64 token_gpa,
++				   const char *token_path)
++{
++	FILE *fp = fopen(path, "w");
++	size_t i;
++
++	if (fp == NULL) {
++		pr_warning("realm token failed to open %s: %s",
++			   path, strerror(errno));
++		return false;
++	}
++
++	fprintf(fp, "magic=0x%08x\n", ctrl->magic);
++	fprintf(fp, "token_ready=%u\n", ctrl->token_ready);
++	fprintf(fp, "token_size=%u\n", ctrl->token_size);
++	fprintf(fp, "gen_count=%u\n", ctrl->gen_count);
++	fprintf(fp, "gen_time_ns=%llu\n",
++		(unsigned long long)ctrl->gen_time_ns);
++	fprintf(fp, "ctrl_gpa=0x%llx\n", (unsigned long long)ctrl_gpa);
++	fprintf(fp, "token_gpa=0x%llx\n", (unsigned long long)token_gpa);
++	fprintf(fp, "token_file=%s\n", token_path);
++	fprintf(fp, "challenge=");
++	for (i = 0; i < sizeof(ctrl->challenge); i++)
++		fprintf(fp, "%02x", ctrl->challenge[i]);
++	fprintf(fp, "\n");
++
++	if (fclose(fp) != 0) {
++		pr_warning("realm token failed to close %s: %s",
++			   path, strerror(errno));
++		return false;
++	}
++
++	return true;
++}
++
++static void realm_agl_close_client(struct realm_agl_verifier *agl)
++{
++	if (agl->client_fd >= 0) {
++		close(agl->client_fd);
++		agl->client_fd = -1;
++	}
++}
++
++static void realm_agl_accept_client(struct realm_agl_verifier *agl)
++{
++	struct sockaddr_in addr;
++	socklen_t addrlen = sizeof(addr);
++	int fd;
++
++	if (!agl->enabled || agl->client_fd >= 0)
++		return;
++
++	fd = accept(agl->listen_fd, (struct sockaddr *)&addr, &addrlen);
++	if (fd < 0) {
++		if (errno != EAGAIN && errno != EWOULDBLOCK) {
++			pr_warning("realm AGL verifier accept failed: %s",
++				   strerror(errno));
++		}
++		return;
++	}
++
++	agl->client_fd = fd;
++	pr_info("realm AGL verifier connected on port %d", agl->port);
++}
++
++static bool realm_fd_wait(int fd, short events, int timeout_ms)
++{
++	struct pollfd pfd = {
++		.fd = fd,
++		.events = events,
++	};
++	int ret;
++
++	do {
++		ret = poll(&pfd, 1, timeout_ms);
++	} while (ret < 0 && errno == EINTR);
++
++	return ret > 0 && (pfd.revents & events);
++}
++
++static bool realm_write_full_timeout(int fd, const void *buf, size_t len,
++				     int timeout_ms)
++{
++	const u8 *p = buf;
++
++	while (len > 0) {
++		ssize_t n;
++
++		if (!realm_fd_wait(fd, POLLOUT, timeout_ms))
++			return false;
++
++		n = write(fd, p, len);
++		if (n < 0) {
++			if (errno == EINTR)
++				continue;
++			return false;
++		}
++		if (n == 0)
++			return false;
++		p += n;
++		len -= n;
++	}
++
++	return true;
++}
++
++static bool realm_read_full_timeout(int fd, void *buf, size_t len,
++				    int timeout_ms)
++{
++	u8 *p = buf;
++
++	while (len > 0) {
++		ssize_t n;
++
++		if (!realm_fd_wait(fd, POLLIN, timeout_ms))
++			return false;
++
++		n = read(fd, p, len);
++		if (n < 0) {
++			if (errno == EINTR)
++				continue;
++			return false;
++		}
++		if (n == 0)
++			return false;
++		p += n;
++		len -= n;
++	}
++
++	return true;
++}
++
++static void realm_agl_verifier_init(struct realm_agl_verifier *agl)
++{
++	struct sockaddr_in addr;
++	int flags;
++	int opt = 1;
++
++	agl->enabled = realm_env_bool("LKVM_REALM_AGL_VERIFY");
++	agl->listen_fd = -1;
++	agl->client_fd = -1;
++	agl->port = (int)realm_env_u64("LKVM_REALM_AGL_VERIFY_PORT",
++				       REALM_AGL_DEFAULT_PORT);
++	agl->timeout_ms = (int)realm_env_u64("LKVM_REALM_AGL_VERIFY_TIMEOUT_MS",
++					     REALM_AGL_DEFAULT_TIMEOUT_MS);
++
++	if (!agl->enabled)
++		return;
++
++	agl->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
++	if (agl->listen_fd < 0) {
++		pr_warning("realm AGL verifier socket failed: %s",
++			   strerror(errno));
++		agl->enabled = false;
++		return;
++	}
++
++	setsockopt(agl->listen_fd, SOL_SOCKET, SO_REUSEADDR,
++		   &opt, sizeof(opt));
++
++	memset(&addr, 0, sizeof(addr));
++	addr.sin_family = AF_INET;
++	addr.sin_addr.s_addr = htonl(INADDR_ANY);
++	addr.sin_port = htons((uint16_t)agl->port);
++
++	if (bind(agl->listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
++	    listen(agl->listen_fd, 1) < 0) {
++		pr_warning("realm AGL verifier listen on port %d failed: %s",
++			   agl->port, strerror(errno));
++		close(agl->listen_fd);
++		agl->listen_fd = -1;
++		agl->enabled = false;
++		return;
++	}
++
++	flags = fcntl(agl->listen_fd, F_GETFL, 0);
++	if (flags >= 0)
++		fcntl(agl->listen_fd, F_SETFL, flags | O_NONBLOCK);
++
++	pr_info("realm AGL verifier waiting on port %d", agl->port);
++}
++
++static u32 realm_agl_verify_token(struct realm_agl_verifier *agl,
++				  u32 gen, u32 token_size, u64 gen_time_ns,
++				  const void *token,
++				  u64 *agl_verify_ns,
++				  u64 *agl_hash_ns)
++{
++	struct realm_agl_verify_req req = {
++		.magic = REALM_AGL_PROTO_MAGIC,
++		.version = REALM_AGL_PROTO_VERSION,
++		.gen = gen,
++		.token_size = token_size,
++		.realm_gen_time_ns = gen_time_ns,
++	};
++	struct realm_agl_verify_resp resp;
++
++	if (agl_verify_ns)
++		*agl_verify_ns = 0;
++	if (agl_hash_ns)
++		*agl_hash_ns = 0;
++
++	if (!agl->enabled)
++		return REALM_COMM_HOST_STATUS_OK;
++
++	realm_agl_accept_client(agl);
++	if (agl->client_fd < 0)
++		return REALM_COMM_HOST_STATUS_AGL_NO_VERIFIER;
++
++	if (!realm_write_full_timeout(agl->client_fd, &req, sizeof(req),
++				      agl->timeout_ms) ||
++	    !realm_write_full_timeout(agl->client_fd, token, token_size,
++				      agl->timeout_ms) ||
++	    !realm_read_full_timeout(agl->client_fd, &resp, sizeof(resp),
++				     agl->timeout_ms)) {
++		pr_warning("realm AGL verifier disconnected or timed out");
++		realm_agl_close_client(agl);
++		return REALM_COMM_HOST_STATUS_AGL_NO_VERIFIER;
++	}
++
++	if (resp.magic != REALM_AGL_PROTO_MAGIC ||
++	    resp.version != REALM_AGL_PROTO_VERSION ||
++	    resp.gen != gen ||
++	    resp.status != 0) {
++		pr_warning("realm AGL verifier rejected token gen=%u status=%u",
++			   gen, resp.status);
++		return REALM_COMM_HOST_STATUS_AGL_VERIFY_FAIL;
++	}
++
++	if (agl_verify_ns)
++		*agl_verify_ns = resp.total_ns;
++	if (agl_hash_ns)
++		*agl_hash_ns = resp.hash_ns;
++
++	pr_info("realm AGL verifier ack gen=%u token_size=%u parse_ns=%llu hash_ns=%llu total_ns=%llu",
++		gen, token_size,
++		(unsigned long long)resp.parse_ns,
++		(unsigned long long)resp.hash_ns,
++		(unsigned long long)resp.total_ns);
++
++	return REALM_COMM_HOST_STATUS_OK;
++}
++
++static void *realm_token_thread(void *arg)
++{
++	struct kvm *kvm = arg;
++	struct kvm_cpu *vcpu;
++	struct realm_comm_ctrl *ctrl;
++	u8 *token;
++	u64 ctrl_gpa;
++	u64 token_gpa;
++	const char *token_path;
++	const char *meta_path;
++	u32 last_gen_count = 0;
++	u32 last_bad_gen_count = 0;
++	u32 last_host_gen = 0;
++	struct realm_agl_verifier agl;
++
++	if (!kvm->cpus || !kvm->cpus[0])
++		return NULL;
++
++	vcpu = kvm->cpus[0];
++	ctrl_gpa = realm_env_u64("LKVM_REALM_TOKEN_CTRL_GPA",
++				 REALM_TOKEN_CTRL_DEFAULT_GPA);
++	token_gpa = realm_env_u64("LKVM_REALM_TOKEN_GPA",
++				  REALM_TOKEN_DEFAULT_GPA);
++	token_path = realm_env_path("LKVM_REALM_TOKEN_OUT",
++				    "/root/realm-token.bin");
++	meta_path = realm_env_path("LKVM_REALM_TOKEN_META",
++				   "/root/realm-token.meta");
++
++	ctrl = guest_flat_to_host(kvm, ctrl_gpa);
++	token = guest_flat_to_host(kvm, token_gpa);
++	if (ctrl == NULL || token == NULL) {
++		pr_warning("realm token watch failed to resolve ctrl=0x%llx token=0x%llx",
++			   (unsigned long long)ctrl_gpa,
++			   (unsigned long long)token_gpa);
++		return NULL;
++	}
++
++	pr_debug("realm token watch ctrl_gpa=0x%llx token_gpa=0x%llx token_out=%s meta=%s",
++		 (unsigned long long)ctrl_gpa,
++		 (unsigned long long)token_gpa,
++		 token_path, meta_path);
++	realm_agl_verifier_init(&agl);
++
++	while (vcpu->is_running) {
++		struct realm_comm_ctrl cur;
++		u8 token_copy[REALM_TOKEN_MAX_SIZE];
++
++		memcpy(&cur, ctrl, sizeof(cur));
++		realm_agl_accept_client(&agl);
++
++		if (cur.magic == REALM_COMM_MAGIC &&
++		    cur.host_req == REALM_COMM_HOST_REQ_NORMAL &&
++		    cur.host_gen != 0 && cur.host_gen != last_host_gen) {
++			char msg[REALM_COMM_HOST_MSG_SIZE + 1];
++			u32 host_status = REALM_COMM_HOST_STATUS_OK;
++			u64 agl_verify_ns = 0;
++			u64 agl_hash_ns = 0;
++
++			memcpy(msg, cur.host_msg, REALM_COMM_HOST_MSG_SIZE);
++			msg[REALM_COMM_HOST_MSG_SIZE] = '\0';
++			for (size_t i = 0; i < REALM_COMM_HOST_MSG_SIZE && msg[i]; i++) {
++				if (!isprint((unsigned char)msg[i]))
++					msg[i] = '.';
++			}
++
++			if (!strncmp(msg, "attest", 6)) {
++				if (cur.token_ready != 1 ||
++				    cur.token_size == 0 ||
++				    cur.token_size > REALM_TOKEN_MAX_SIZE ||
++				    cur.gen_count == 0) {
++					host_status = REALM_COMM_HOST_STATUS_NO_TOKEN;
++				} else {
++					/*
++					 * The paper-facing measurement path is a
++					 * Normal World consume/ack, not filesystem
++					 * throughput. Copy the token out of guest
++					 * memory here and mark this generation as
++					 * consumed so the generic dump path below
++					 * does not add per-iteration file I/O.
++					 */
++					memcpy(token_copy, token, cur.token_size);
++					last_gen_count = cur.gen_count;
++					host_status = realm_agl_verify_token(&agl,
++									     cur.host_gen,
++									     cur.token_size,
++									     cur.gen_time_ns,
++									     token_copy,
++									     &agl_verify_ns,
++									     &agl_hash_ns);
++				}
++				pr_info("realm normal-world attest request gen=%u req=%u token_gen=%u token_size=%u token_gen_time_ns=%llu status=%u",
++					cur.host_gen, cur.host_req,
++					cur.gen_count, cur.token_size,
++					(unsigned long long)cur.gen_time_ns,
++					host_status);
++			} else {
++				pr_info("realm normal-world request gen=%u req=%u arg0=0x%llx arg1=0x%llx msg=\"%s\"",
++					cur.host_gen, cur.host_req,
++					(unsigned long long)cur.host_arg0,
++					(unsigned long long)cur.host_arg1,
++					msg);
++			}
++
++			ctrl->host_status = host_status;
++			ctrl->host_arg0 = agl_verify_ns;
++			ctrl->host_arg1 = agl_hash_ns;
++			__sync_synchronize();
++			ctrl->host_ack = cur.host_gen;
++			last_host_gen = cur.host_gen;
++		}
++
++		if (cur.magic != REALM_COMM_MAGIC || cur.token_ready != 1) {
++			usleep(REALM_TOKEN_WATCH_POLL_US);
++			continue;
++		}
++
++		if (cur.gen_count == last_gen_count) {
++			usleep(REALM_TOKEN_WATCH_POLL_US);
++			continue;
++		}
++
++		if (cur.token_size == 0 || cur.token_size > REALM_TOKEN_MAX_SIZE) {
++			if (cur.gen_count != last_bad_gen_count) {
++				pr_warning("realm token invalid size gen=%u size=%u",
++					   cur.gen_count, cur.token_size);
++				last_bad_gen_count = cur.gen_count;
++			}
++			usleep(REALM_TOKEN_WATCH_POLL_US);
++			continue;
++		}
++
++		memcpy(token_copy, token, cur.token_size);
++		if (!realm_write_binary_file(token_path, token_copy, cur.token_size)) {
++			usleep(REALM_TOKEN_WATCH_POLL_US);
++			continue;
++		}
++		realm_write_token_meta(meta_path, &cur, ctrl_gpa, token_gpa,
++				       token_path);
++
++		pr_debug("realm token published gen=%u size=%u gen_time_ns=%llu token=%s meta=%s",
++			 cur.gen_count, cur.token_size,
++			 (unsigned long long)cur.gen_time_ns,
++			 token_path, meta_path);
++		last_gen_count = cur.gen_count;
++
++		usleep(REALM_TOKEN_WATCH_POLL_US);
++	}
++
++	return NULL;
++}
++
++static void *realm_status_thread(void *arg)
++{
++	struct kvm *kvm = arg;
++	struct kvm_cpu *vcpu;
++	struct realm_status_page *page;
++	struct realm_status_page last = { 0 };
++	u64 gpa;
++
++	if (!kvm->cpus || !kvm->cpus[0]) {
++		return NULL;
++	}
++
++	vcpu = kvm->cpus[0];
++	gpa = realm_status_watch_gpa();
++	page = guest_flat_to_host(kvm, gpa);
++	if (page == NULL) {
++		pr_warning("Realm status watch failed to resolve GPA 0x%llx",
++			   (unsigned long long)gpa);
++		return NULL;
++	}
++
++	memset(page, 0, PAGE_SIZE);
++	pr_debug("realm status watch gpa=0x%llx host=%p",
++		 (unsigned long long)gpa, page);
++
++	while (vcpu->is_running) {
++		struct realm_status_page cur;
++
++		memcpy(&cur, page, sizeof(cur));
++		if (memcmp(&cur, &last, sizeof(cur)) != 0) {
++			if (cur.magic == REALM_STATUS_MAGIC) {
++				pr_debug("realm status phase=%u(%s) heartbeat=%u value0=%llu value1=%llu text=\"%s\"",
++					 cur.phase, realm_status_phase_name(cur.phase),
++					 cur.heartbeat,
++					 (unsigned long long)cur.value0,
++					 (unsigned long long)cur.value1,
++					 cur.text);
++			} else {
++				pr_debug("realm status raw update magic=0x%x phase=%u heartbeat=%u",
++					 cur.magic, cur.phase, cur.heartbeat);
++			}
++			last = cur;
++		}
++
++		usleep(100000);
++	}
++
++	return NULL;
++}
+ 
+ #define KB_SHIFT		(10)
+ #define MB_SHIFT		(20)
+@@ -830,12 +1698,31 @@ static struct kvm *kvm_cmd_run_init(int argc, const char **argv)
+ static int kvm_cmd_run_work(struct kvm *kvm)
+ {
+ 	int i;
++	pthread_t trace_thread;
++	pthread_t status_thread;
++	pthread_t token_thread;
+ 
+ 	for (i = 0; i < kvm->nrcpus; i++) {
+ 		if (pthread_create(&kvm->cpus[i]->thread, NULL, kvm_cpu_thread, kvm->cpus[i]) != 0)
+ 			die("unable to create KVM VCPU thread");
+ 	}
+ 
++	if (loglevel == LOGLEVEL_DEBUG && vcpu_trace_supported() &&
++	    vcpu_trace_enabled() &&
++	    pthread_create(&trace_thread, NULL, vcpu_trace_thread, kvm) == 0) {
++		pthread_detach(trace_thread);
++	}
++
++	if (loglevel == LOGLEVEL_DEBUG && realm_status_watch_enabled(kvm) &&
++	    pthread_create(&status_thread, NULL, realm_status_thread, kvm) == 0) {
++		pthread_detach(status_thread);
++	}
++
++	if (realm_token_watch_enabled(kvm) &&
++	    pthread_create(&token_thread, NULL, realm_token_thread, kvm) == 0) {
++		pthread_detach(token_thread);
++	}
++
+ 	/* Only VCPU #0 is going to exit by itself when shutting down */
+ 	if (pthread_join(kvm->cpus[0]->thread, NULL) != 0)
+ 		die("unable to join with vcpu 0");
+diff --git a/hw/serial.c b/hw/serial.c
+index b6263a0..4f380fe 100644
+--- a/hw/serial.c
++++ b/hw/serial.c
+@@ -14,6 +14,7 @@
+ #include <pthread.h>
+ 
+ #if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
++#include "asm/realm.h"
+ #define serial_iobase(nr)	(ARM_UART_MMIO_BASE + (nr) * 0x1000)
+ #define serial_irq(nr)		(32 + (nr))
+ #define SERIAL8250_BUS_TYPE	DEVICE_BUS_MMIO
+@@ -50,6 +51,7 @@ struct serial8250_device {
+ 	u8			id;
+ 
+ 	u32			iobase;
++	u64			realm_alias_iobase;
+ 	u8			irq;
+ 	u8			irq_state;
+ 	int			txcnt;
+@@ -142,6 +144,28 @@ static struct serial8250_device devices[] = {
+ 	},
+ };
+ 
++static u64 serial8250_realm_shared_alias_bit(struct kvm *kvm)
++{
++	u64 max_ipa;
++	unsigned int ipa_bits;
++
++	if (!kvm__is_realm(kvm))
++		return 0;
++
++	max_ipa = kvm->cfg.ram_addr + kvm->cfg.ram_size - 1;
++	if (max_ipa == 0)
++		return 0;
++
++	ipa_bits = 64U - __builtin_clzll(max_ipa);
++	if (ipa_bits < 32U)
++		ipa_bits = 32U;
++
++	/* Realms need one extra IPA bit for the shared alias space. */
++	ipa_bits++;
++
++	return 1ULL << (ipa_bits - 1U);
++}
++
+ static void serial8250_flush_tx(struct kvm *kvm, struct serial8250_device *dev)
+ {
+ 	dev->lsr |= UART_LSR_TEMT | UART_LSR_THRE;
+@@ -408,11 +432,26 @@ static void serial8250_mmio(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
+ 			    u8 is_write, void *ptr)
+ {
+ 	struct serial8250_device *dev = ptr;
++	u16 offset;
++	bool is_alias = false;
++
++	if (dev->realm_alias_iobase && addr >= dev->realm_alias_iobase &&
++	    addr < dev->realm_alias_iobase + 8) {
++		offset = addr - dev->realm_alias_iobase;
++		is_alias = true;
++	} else {
++		offset = addr - dev->iobase;
++	}
++
++	if (is_alias && getenv("LKVM_UART_MMIO_TRACE")) {
++		pr_debug("serial8250 alias mmio dev=%u %s addr=0x%llx off=0x%x data0=0x%02x",
++			 dev->id, is_write ? "write" : "read", addr, offset, data[0]);
++	}
+ 
+ 	if (is_write)
+-		serial8250_out(dev, vcpu, addr - dev->iobase, data);
++		serial8250_out(dev, vcpu, offset, data);
+ 	else
+-		serial8250_in(dev, vcpu, addr - dev->iobase, data);
++		serial8250_in(dev, vcpu, offset, data);
+ }
+ 
+ #ifdef CONFIG_HAS_LIBFDT
+@@ -455,6 +494,7 @@ void serial8250_generate_fdt_node(void *fdt, struct device_header *dev_hdr,
+ static int serial8250__device_init(struct kvm *kvm,
+ 				   struct serial8250_device *dev)
+ {
++	u64 alias_bit;
+ 	int r;
+ 
+ 	r = device__register(&dev->dev_hdr);
+@@ -464,6 +504,21 @@ static int serial8250__device_init(struct kvm *kvm,
+ 	ioport__map_irq(&dev->irq);
+ 	r = kvm__register_iotrap(kvm, dev->iobase, 8, serial8250_mmio, dev,
+ 				 SERIAL8250_BUS_TYPE);
++	if (r < 0)
++		return r;
++	pr_debug("serial8250 base trap dev=%u addr=0x%x", dev->id, dev->iobase);
++
++	alias_bit = serial8250_realm_shared_alias_bit(kvm);
++	if (alias_bit) {
++		dev->realm_alias_iobase = (u64)dev->iobase | alias_bit;
++		r = kvm__register_iotrap(kvm, dev->realm_alias_iobase, 8,
++					 serial8250_mmio, dev,
++					 SERIAL8250_BUS_TYPE);
++		if (r < 0)
++			return r;
++		pr_debug("serial8250 realm alias trap dev=%u addr=0x%llx",
++			 dev->id, dev->realm_alias_iobase);
++	}
+ 
+ 	return r;
+ }
+@@ -486,6 +541,9 @@ cleanup:
+ 	for (j = 0; j <= i; j++) {
+ 		struct serial8250_device *dev = &devices[j];
+ 
++		if (dev->realm_alias_iobase)
++			kvm__deregister_iotrap(kvm, dev->realm_alias_iobase,
++					       SERIAL8250_BUS_TYPE);
+ 		kvm__deregister_iotrap(kvm, dev->iobase, SERIAL8250_BUS_TYPE);
+ 		device__unregister(&dev->dev_hdr);
+ 	}
+@@ -502,6 +560,12 @@ int serial8250__exit(struct kvm *kvm)
+ 	for (i = 0; i < ARRAY_SIZE(devices); i++) {
+ 		struct serial8250_device *dev = &devices[i];
+ 
++		if (dev->realm_alias_iobase) {
++			r = kvm__deregister_iotrap(kvm, dev->realm_alias_iobase,
++						   SERIAL8250_BUS_TYPE);
++			if (r < 0)
++				return r;
++		}
+ 		r = kvm__deregister_iotrap(kvm, dev->iobase,
+ 					   SERIAL8250_BUS_TYPE);
+ 		if (r < 0)
+diff --git a/kvm-cpu.c b/kvm-cpu.c
+index 1c566b3..15e2f60 100644
+--- a/kvm-cpu.c
++++ b/kvm-cpu.c
+@@ -165,10 +165,13 @@ int kvm_cpu__start(struct kvm_cpu *cpu)
+ 			cpu->needs_nmi = 0;
+ 		}
+ 
+-		if (cpu->task)
+-			kvm_cpu__run_task(cpu);
++			if (cpu->task)
++				kvm_cpu__run_task(cpu);
+ 
+-		kvm_cpu__run(cpu);
++			kvm_cpu__run(cpu);
++			if (cpu->kvm_run->exit_reason != KVM_EXIT_MMIO)
++				pr_debug("vcpu%lu exit_reason=%d", cpu->cpu_id,
++					 cpu->kvm_run->exit_reason);
+ 
+ 		switch (cpu->kvm_run->exit_reason) {
+ 		case KVM_EXIT_UNKNOWN:
+@@ -194,6 +197,19 @@ int kvm_cpu__start(struct kvm_cpu *cpu)
+ 		}
+ 		case KVM_EXIT_MMIO: {
+ 			bool ret;
++			u64 phys = cpu->kvm_run->mmio.phys_addr;
++			u32 len = cpu->kvm_run->mmio.len;
++			u8 is_write = cpu->kvm_run->mmio.is_write;
++
++				if (getenv("LKVM_UART_MMIO_TRACE") &&
++				    (((phys >= 0x1000000 && phys < 0x1001000) ||
++				      (phys >= 0x101000000ULL && phys < 0x101001000ULL)) &&
++				     (is_write || ((phys & 0xfff) != 0x5)))) {
++					pr_debug("vcpu%lu MMIO %s addr=0x%llx len=%u data0=0x%02x",
++						 cpu->cpu_id,
++						 is_write ? "write" : "read",
++						 phys, len, cpu->kvm_run->mmio.data[0]);
++				}
+ 
+ 			/*
+ 			 * If we had MMIO exit, coalesced ring should be processed
+diff --git a/term.c b/term.c
+index b8a70fe..a24dd17 100644
+--- a/term.c
++++ b/term.c
+@@ -179,7 +179,13 @@ static int term_init(struct kvm *kvm)
+ 			term_fds[i][TERM_FD_OUT] = STDOUT_FILENO;
+ 		}
+ 
+-	if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
++	/*
++	 * Console input only depends on stdin being a tty. Realm bring-up may
++	 * pipe stdout through tee so guest UART can be captured in a log while
++	 * still being forwarded to the FVP telnet tty. Do not disable the input
++	 * poll thread just because stdout is a pipe.
++	 */
++	if (!isatty(STDIN_FILENO))
+ 		return 0;
+ 
+ 	r = tcgetattr(STDIN_FILENO, &orig_term);

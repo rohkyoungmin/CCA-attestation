@@ -35,7 +35,7 @@ OUTFILE="$RESULTS_DIR/measurement_${TIMESTAMP}.txt"
 exec > >(tee -a "$OUTFILE") 2>&1
 
 log_head "========================================================"
-log_head " SCRUTINIZER — V-ECU Attestation & Communication Benchmark"
+log_head " CCA V-ECU Attestation & Communication Benchmark"
 log_head " $(date '+%Y-%m-%d %H:%M:%S')"
 log_head "========================================================"
 echo ""

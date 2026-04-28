@@ -1,0 +1,9 @@
+if BOARD_LKVM_REALM_PAYLOAD
+
+config BOARD
+	default "lkvm_realm_payload"
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default 62500000
+
+endif # BOARD_LKVM_REALM_PAYLOAD

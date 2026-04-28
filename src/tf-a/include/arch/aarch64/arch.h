@@ -394,7 +394,7 @@
 				 & ID_PFR1_VIRTEXT_MASK)
 
 /* SCTLR definitions */
-//TME, bit [53], TME0, bit [52]; enable TME for EL2 to support scrutinizer
+// TME, bit [53], TME0, bit [52]; enable TME for EL2 monitor support.
 #define SCTLR_EL2_RES1	((U(1) << 29) | (U(1) << 28) | (U(1) << 23) | \
 			 (U(1) << 22) | (U(1) << 18) | (U(1) << 16) | \
 			 (U(1) << 11) | (U(1) << 5) | (U(1) << 4)) | (UL(1) << 53) | (UL(1) << 52)

@@ -1,8 +1,16 @@
 .DS_Store
 .vscode
 *.ext4
+/docs/*.pdf
 
 /dev_workspace/
 /debug/
 /scripts/trace/trace_data.bin
 /scripts/trace/decode.txt
+
+# Generated build outputs
+/src/agl_attest_verifier/agl_attest_verifier
+/src/realm_baremetal/build/
+/src/realm_shim/build/
+/src/vecu_zephyr/build/
+/src/vecu_zephyr_minimal/build/

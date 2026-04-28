@@ -64,4 +64,4 @@ sc_user_client -i 2 -d
 
 ```
 
-ETE decode. Download `ins_dump` to `<SCRUTINIZER-REPO>/scripts/trace` and rename it to `trace_data.bin`. Run `/scripts/test-ete-decode.sh` to get the decoded ETE trace within 'scripts/trace/decode.txt `.
+ETE decode. Download `ins_dump` to `<CCA-ATTESTATION-REPO>/scripts/trace` and rename it to `trace_data.bin`. Run `/scripts/test-ete-decode.sh` to get the decoded ETE trace within `scripts/trace/decode.txt`.

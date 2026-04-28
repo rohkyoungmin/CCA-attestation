@@ -46,7 +46,7 @@ extern void __attribute__ ((visibility ("hidden"))) agent_vector_end(void);
 
 int SCRUTINIZER_INIT()
 {
-    NOTICE("SCRUTINIZER INIT\n");
+    NOTICE("CCA MONITOR INIT\n");
 
     int rc __unused;
 

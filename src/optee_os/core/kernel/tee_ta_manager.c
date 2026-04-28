@@ -325,7 +325,7 @@ static void destroy_context(struct tee_ta_ctx *ctx)
 {
 	DMSG("Destroy TA ctx (0x%" PRIxVA ")",  (vaddr_t)ctx);
 
-	//This position is used by test scrutinizer feature.
+	// This position is used by the local monitor test feature.
 	//Destroy TA ctx (0x630de10)
 	uint64_t test_addr = (vaddr_t)ctx;
 	int i = 2;
@@ -348,13 +348,13 @@ static void destroy_context(struct tee_ta_ctx *ctx)
 		uint64_t w_vaddr = &(ctx->panic_code);
 
 		// 0x6296828 0X1234567
-		// DMSG("test scrutinizer:auth(0x%" PRIxVA ")",  (vaddr_t)0x6296828);
+		// DMSG("test monitor:auth(0x%" PRIxVA ")",  (vaddr_t)0x6296828);
 		// thread_smc(SC_AUTH, 0x6296828, 0, 0);
 		
 		// //EL1 w_vaddr/0xFA804000 0x80FA804000
 		// //size 0x4; 
 		// //target el 0x0 0x1 0x2
-		// DMSG("test scrutinizer:introspection(0x%" PRIxVA ")",  (vaddr_t)w_vaddr);
+		// DMSG("test monitor:introspection(0x%" PRIxVA ")",  (vaddr_t)w_vaddr);
 		// thread_smc(SC_INTROSPECTION, 0x80FA804000, 0x4, 0x2);
 		// thread_smc(SC_INTROSPECTION, w_vaddr, 0x4, 0x1);
 		// thread_smc(SC_EL3_INTROSPECTION, w_vaddr, 0x0, 0x0);
@@ -363,17 +363,17 @@ static void destroy_context(struct tee_ta_ctx *ctx)
 		// thread_smc(SC_EL3_INTROSPECTION, w_vaddr, 0x1, 0x1);
 
 
-		// DMSG("test scrutinizer:enable trace");
+		// DMSG("test monitor:enable trace");
 		// thread_smc(SC_ETE_TRACE, 0, 0, 0);
 
-		// DMSG("test scrutinizer:set watchpoint(0x%" PRIxVA ")",  (vaddr_t)w_vaddr);
+		// DMSG("test monitor:set watchpoint(0x%" PRIxVA ")",  (vaddr_t)w_vaddr);
 		// thread_smc(SC_WATCHPOINT, w_vaddr, 1, 0);
 
 
-		// DMSG("test scrutinizer:set breakpoint(0x%" PRIxVA ")",  (vaddr_t)0x6296828);
+		// DMSG("test monitor:set breakpoint(0x%" PRIxVA ")",  (vaddr_t)0x6296828);
 		// thread_smc(SC_BREAKPOINT, 0x6296f48, 1, 0);
 
-		// DMSG("test scrutinizer: PMI-based stepping breakpoint");
+		// DMSG("test monitor: PMI-based stepping breakpoint");
 		// thread_smc(SC_STEPPING, 0x6296828, 1, 0);
 
 		//read test
@@ -384,10 +384,10 @@ static void destroy_context(struct tee_ta_ctx *ctx)
 		// ctx->panic_code = ctx->panic_code +123;
 		// ctx->panic_code = ctx->panic_code *10;
 
-		// DMSG("test scrutinizer:disable trace");
+		// DMSG("test monitor:disable trace");
 		// thread_smc(SC_DISABLE_TRACE, 0, 0, 0);
 
-		// DMSG("test scrutinizer: disable stepping");
+		// DMSG("test monitor: disable stepping");
 		// thread_smc(SC_DISABLE_STEPPING, 0, 0, 0);
 
 

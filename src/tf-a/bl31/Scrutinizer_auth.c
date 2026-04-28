@@ -1,4 +1,4 @@
-//SCRUTINIZER_AUTH
+// Local monitor authentication support.
 
 #include <bl31/Scrutinizer.h>
 #include <bl31/Scrutinizer_pmu.h>

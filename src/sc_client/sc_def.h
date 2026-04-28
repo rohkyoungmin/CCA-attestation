@@ -65,7 +65,7 @@ typedef struct register_info {
    u_register_t spsr_el2;
 } sc_reg_info_t;
 
-// The secure world PAS region that scrutinizer currently focus on.
+// Secure World PAS region monitored by the local monitor client.
 #define PLAT_ARM_TRUSTED_DRAM_BASE	0x06000000
 #define PLAT_ARM_TRUSTED_DRAM_SIZE	0x02000000	/* 32 MB */
 

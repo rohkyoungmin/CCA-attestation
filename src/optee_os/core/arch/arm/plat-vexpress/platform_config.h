@@ -84,7 +84,7 @@
 
 #if defined(PLATFORM_FLAVOR_fvp)
 /*
- * FVP specifics. adjust for running scrutinizer
+ * FVP specifics. Adjust for the local monitor layout.
  */
 //non-sec DRAM 2GB-64MB
 #define DRAM0_BASE		0x80000000
@@ -98,7 +98,7 @@
 #define TZCDRAM_SIZE		0x01c00000
 
 
-//scrutinizer agent page ranges
+// Local monitor agent page ranges.
 // #define AGENT_BASE		0xFA000000
 // #define AGENT_SIZE		0x01C00000
 

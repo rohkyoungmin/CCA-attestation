@@ -578,7 +578,7 @@
  * Put BL2 just below BL1.
  */
 // #define BL2_BASE			(BL1_RW_BASE - PLAT_ARM_MAX_BL2_SIZE)
-#define BL2_BASE			(BL1_RW_BASE - PLAT_ARM_MAX_BL2_SIZE + 0x3000) //for Scrutinizer + 0x3000
+#define BL2_BASE			(BL1_RW_BASE - PLAT_ARM_MAX_BL2_SIZE + 0x3000) // for local monitor + 0x3000
 // #define BL2_LIMIT			BL1_RW_BASE
 
 #define BL2_LIMIT			(ARM_BL_RAM_BASE + ARM_BL_RAM_SIZE)

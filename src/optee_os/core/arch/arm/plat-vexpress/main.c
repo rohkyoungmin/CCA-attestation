@@ -50,7 +50,7 @@ register_ddr(DRAM0_BASE, DRAM0_SIZE);
 register_ddr(DRAM1_BASE, DRAM1_SIZE);
 #endif
 
-//scrutinizer agent page mapping
+// Local monitor agent page mapping.
 // register_phys_mem(MEM_AREA_RAM_SEC, AGENT_BASE, AGENT_SIZE);
 
 #ifdef CFG_GIC

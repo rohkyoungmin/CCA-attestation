@@ -1,0 +1,24 @@
+description: Realm-safe polling UART backed by shared-alias NS16550 MMIO
+
+compatible: "lkvm,realm-uart"
+
+include: uart-controller.yaml
+
+properties:
+  reg:
+    required: true
+
+  reg-shift:
+    type: int
+    default: 0
+    description: Quantity to shift register offsets by.
+
+  current-speed:
+    type: int
+    default: 115200
+    description: Initial baud rate used by the Realm UART driver.
+
+  clock-frequency:
+    type: int
+    default: 1843200
+    description: Input clock used to compute the UART divisor latch.

@@ -66,12 +66,32 @@ zephyr_build() {
 
 vecu-zephyr_build() {
     log "===> build Zephyr Realm V-ECU app... "
-    $SCRIPT_BUILD_DIR/build-vecu-zephyr.sh
+    $SCRIPT_BUILD_DIR/build-zephyr.sh
 }
 
 agl_build() {
     log "===> build AGL (Automotive Grade Linux, Normal V-ECU)... "
     $SCRIPT_BUILD_DIR/build-agl.sh
+}
+
+kvmtool_build() {
+    log "===> build kvmtool-cca lkvm-static with Realm/Zephyr patch... "
+    $SCRIPT_BUILD_DIR/build-kvmtool-arm64.sh
+}
+
+agl-verifier_build() {
+    log "===> build AGL attestation verifier... "
+    $SCRIPT_BUILD_DIR/build-agl-attest-verifier.sh
+}
+
+realm-shim-zephyr_build() {
+    log "===> build Realm shim + Zephyr mini-shell bundle... "
+    MINI_SHELL_MODE=1 $SCRIPT_BUILD_DIR/build-realm-zephyr-shim-bundle.sh
+}
+
+paper-demo_build() {
+    log "===> build paper-facing AGL + Zephyr Realm attestation demo... "
+    $SCRIPT_BUILD_DIR/build-agl-realm-attest-demo.sh
 }
 
 
@@ -106,9 +126,6 @@ buildall() {
    log "===> build Zephyr RTOS (Realm V-ECU)... "
    $SCRIPT_BUILD_DIR/build-zephyr.sh
 
-   log "===> build Zephyr Realm V-ECU app... "
-   $SCRIPT_BUILD_DIR/build-vecu-zephyr.sh
-
    log "===> build AGL (Automotive Grade Linux, Normal V-ECU)... "
    $SCRIPT_BUILD_DIR/build-agl.sh
 }
@@ -116,7 +133,7 @@ buildall() {
 
 
 if [ $# != 1 ]; then
-    log_error "Usage: ./build.sh [all | hafnium | optee-os | rmm | linux | tf-a | opencsd | optee-client | optee-examples | ta | zephyr | vecu-zephyr | agl]"
+    log_error "Usage: ./build.sh [all | hafnium | optee-os | rmm | linux | tf-a | opencsd | optee-client | optee-examples | ta | zephyr | vecu-zephyr | agl | kvmtool | agl-verifier | realm-shim-zephyr | paper-demo]"
     exit
 fi
 
@@ -126,6 +143,6 @@ else
     if [ "$(type -t $1_build)" == function ]; then 
         $1_build
     else 
-        log_error "Usage: ./build.sh [all | hafnium | optee-os | rmm | linux | tf-a | opencsd | optee-client | optee-examples | ta | zephyr | vecu-zephyr | agl]"
+        log_error "Usage: ./build.sh [all | hafnium | optee-os | rmm | linux | tf-a | opencsd | optee-client | optee-examples | ta | zephyr | vecu-zephyr | agl | kvmtool | agl-verifier | realm-shim-zephyr | paper-demo]"
     fi
 fi

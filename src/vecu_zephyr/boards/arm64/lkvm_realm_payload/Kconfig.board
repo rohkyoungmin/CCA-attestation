@@ -1,0 +1,3 @@
+config BOARD_LKVM_REALM_PAYLOAD
+	bool "lkvm Realm payload VM (ARM CCA)"
+	depends on SOC_QEMU_CORTEX_A53

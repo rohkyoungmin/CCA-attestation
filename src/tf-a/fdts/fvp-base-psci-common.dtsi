@@ -152,7 +152,7 @@
 	 	#address-cells = <2>;
 	 	#size-cells = <2>;
 	 	ranges;
-	 	bufpool:bufpool@F8000000 { // reserved for Scrutinizer's ete trace buffer
+		bufpool:bufpool@F8000000 { // reserved for the ETE trace buffer
 	 		compatible = "ete-bufpool";
 	 		reusable;
 	 		reg = <0x0 0xF8000000 0x0 0x2000000>;  // addr: 0xF8000000, size: 32MB 
@@ -220,7 +220,7 @@
 				reg = <0x20000 0x10000>;
 			};
 	};
- //scrutinizer SGI 0-15, PPI 16-31, the SPI interrupt ID = SPI + offset (32)
+ // SGI 0-15, PPI 16-31, the SPI interrupt ID = SPI + offset (32)
 	pmu {
 		compatible = "arm,armv8-pmuv3";
 		interrupts = <GIC_SPI 60 IRQ_TYPE_LEVEL_HIGH>,

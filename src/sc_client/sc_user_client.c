@@ -40,7 +40,7 @@ static const char *optstring = "e:a:s:w:b:i:p:o:drmh";
 
 void usage(void)
 {
-    printf("SCRUTINIZER usage: sc_user_client [options]\n");
+    printf("CCA monitor client usage: sc_user_client [options]\n");
     printf("Options:\n");
     printf("  -r|--registers                          Dump registers\n\n");
 
