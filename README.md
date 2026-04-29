@@ -657,20 +657,6 @@ sc_user_client -h
 
 More usage examples are documented in [`docs/client.md`](./docs/client.md).
 
-## Measurements
-
-For the attestation and V-ECU communication microbenchmarks, run:
-
-```bash
-./scripts/measure_all.sh
-```
-
-This covers:
-
-- CCA attestation token generation
-- token verification
-- baseline TCP, TLS, and TLS-plus-attestation communication phases
-
 ## Notes
 
 - `env.sh all` prepares external sources and tools. It does not create every build artifact by itself.
